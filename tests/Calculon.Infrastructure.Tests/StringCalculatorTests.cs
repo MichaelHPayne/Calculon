@@ -40,20 +40,5 @@ namespace Calculon.Infrastructure.Tests
                     because: $"Input: '{input}' with operation {operationType} should result in {expectedResult} with formula '{expectedFormula}'");
         }
 
-        [Fact]
-        public void Calculate_MoreThanTwoNumbers_ReturnsError()
-        {
-            // Arrange
-            var input = "1,2,3";
-
-            // Act
-            var result = _calculator.Calculate(new RawInput(input), OperationType.Add);
-
-            // Assert
-            result.Should().BeOfType<Result<CalculationResult>.Error>()
-                .Which.Message.Should().Contain("More than 2 numbers are not allowed",
-                    because: $"Input '{input}' contains more than two numbers and should return an error");
-        }
-
     }
 }

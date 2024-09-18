@@ -32,7 +32,6 @@ namespace Calculon.Infrastructure
         public Result<CalculationResult> Calculate(RawInput input, OperationType operationType) =>
             ProcessInput(input)
                 .Bind(ApplyDelimiterStrategy)
-                .Bind(ValidateNumberCount)
                 .Bind(ParseNumbers)
                 .Bind(ValidateNumbers)
                 .Bind(numbers => ExecuteOperation(numbers, operationType))
@@ -54,16 +53,23 @@ namespace Calculon.Infrastructure
                 ?? new Result<NumberStrings>.Error("No suitable delimiter strategy found");
 
         // Parses the number strings into decimals, defaulting to 0 for invalid or missing entries.
-        // Ensures exactly two numbers are available by padding with zeros, aligning with binary operation requirements.
-        private Result<ParsedNumbers> ParseNumbers(NumberStrings numbers) =>
-            new Result<ParsedNumbers>.Ok(new ParsedNumbers(
-                numbers.Values
-                    .Select(number =>
-                        string.IsNullOrWhiteSpace(number) ? 0m :
-                        decimal.TryParse(number, out var result) ? result : 0m)
-                    .Concat(Enumerable.Repeat(0m, 2 - numbers.Values.Count))
-                    .Take(2)
-                    .ToImmutableList()));
+        // If only one number is provided, pads with a zero to ensure at least two numbers for binary operations.
+        private Result<ParsedNumbers> ParseNumbers(NumberStrings numbers)
+        {
+            var parsedNumbers = numbers.Values
+                .Select(number =>
+                    string.IsNullOrWhiteSpace(number) ? 0m :
+                    decimal.TryParse(number, out var result) ? result : 0m)
+                .ToList();
+
+            // If only one number is present, pad with a zero
+            if (parsedNumbers.Count == 1)
+            {
+                parsedNumbers.Add(0m);
+            }
+
+            return new Result<ParsedNumbers>.Ok(new ParsedNumbers(parsedNumbers.ToImmutableList()));
+        }
 
         // Validates that there are no negative numbers if the configuration disallows them,
         // enhancing the robustness by enforcing business rules.
@@ -80,7 +86,7 @@ namespace Calculon.Infrastructure
         // and ensures only supported operations are processed.
         private Result<(decimal Result, IReadOnlyList<decimal> Numbers)> ExecuteOperation(ParsedNumbers numbers, OperationType operationType) =>
             _operationStrategies.TryGetValue(operationType, out var strategy)
-                ? operationType == OperationType.Divide && numbers.Values[1] == 0m
+                ? (operationType == OperationType.Divide && numbers.Values.Skip(1).Contains(0m))
                     ? new Result<(decimal, IReadOnlyList<decimal>)>.Error("Cannot divide by zero")
                     : new Result<(decimal, IReadOnlyList<decimal>)>.Ok((strategy.Execute(numbers.Values), numbers.Values))
                 : new Result<(decimal, IReadOnlyList<decimal>)>.Error($"Unsupported operation: {operationType}");
@@ -107,12 +113,5 @@ namespace Calculon.Infrastructure
             // Limits to a maximum number of decimal places and removes trailing zeros for cleaner display
             return result.ToString($"F{MaxDecimalPlaces}", CultureInfo.InvariantCulture).TrimEnd('0').TrimEnd('.');
         }
-
-        // Ensures that the number of parsed values does not exceed two,
-        // aligning with the calculator's design to handle binary operations only.
-        private Result<NumberStrings> ValidateNumberCount(NumberStrings numbers) =>
-            numbers.Values.Count > 2
-                ? new Result<NumberStrings>.Error("More than 2 numbers are not allowed")
-                : new Result<NumberStrings>.Ok(numbers);
     }
 }
